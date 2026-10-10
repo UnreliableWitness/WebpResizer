@@ -34,7 +34,7 @@ public sealed record WebpOptions
 
     /// <summary>
     /// Encoder effort, 0 (fastest) to 6 (smallest files). Default 4, the libwebp default.
-    /// Effort 2 encodes about 2.4× faster for files about 5% larger.
+    /// Effort 2 is about 1.7× faster end to end (decode, resize and encode) for files about 5% larger.
     /// </summary>
     public int Effort { get; init; } = 4;
 
