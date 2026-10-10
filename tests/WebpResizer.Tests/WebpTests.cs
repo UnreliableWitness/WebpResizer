@@ -208,6 +208,36 @@ public class WebpTests
     }
 
     [Fact]
+    public void ResizeFile_takes_paths_with_brackets_literally()
+    {
+        var dir = Directory.CreateTempSubdirectory();
+        try
+        {
+            var input = Path.Combine(dir.FullName, "scan[2]");
+            File.WriteAllBytes(input, Landscape);
+
+            var r = Webp.ResizeFile(input, Path.Combine(dir.FullName, "out.webp"), new WebpOptions { Width = 300 });
+
+            Assert.Equal((300, 200), (r.Width, r.Height));
+        }
+        finally { dir.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public void ResizeFile_reports_missing_output_directory()
+    {
+        var dir = Directory.CreateTempSubdirectory();
+        try
+        {
+            var input = Path.Combine(dir.FullName, "in.jpg");
+            File.WriteAllBytes(input, Landscape);
+
+            Assert.Throws<DirectoryNotFoundException>(() => Webp.ResizeFile(input, Path.Combine(dir.FullName, "missing", "out.webp")));
+        }
+        finally { dir.Delete(recursive: true); }
+    }
+
+    [Fact]
     public void ResizeFile_reports_missing_input()
     {
         Assert.Throws<FileNotFoundException>(() => Webp.ResizeFile("does-not-exist.jpg", "out.webp"));
@@ -234,6 +264,44 @@ public class WebpTests
 
         Assert.All(results, r => Assert.Equal((256, 171), (r.Width, r.Height)));
         Assert.All(results, r => Assert.Equal(results[0].Data, r.Data));
+    }
+
+    [Fact]
+    public void Reports_outputs_wider_than_webp_allows()
+    {
+        var wide = TestImages.Png(16400, 8);
+
+        var e = Assert.Throws<ImageProcessingException>(() => Webp.Resize(wide));
+        Assert.Contains("16383", e.Message);
+
+        Assert.Equal(1000, Webp.Resize(wide, new WebpOptions { Width = 1000 }).Width);
+    }
+
+    [Fact]
+    public async Task ResizeAsync_accepts_non_seekable_streams()
+    {
+        using var input = new NonSeekableStream(new MemoryStream(Landscape));
+        using var output = new MemoryStream();
+
+        var r = await Webp.ResizeAsync(input, output, new WebpOptions { Width = 120 });
+
+        Assert.Equal(120, r.Width);
+        Assert.Equal(r.Data, output.ToArray());
+    }
+
+    sealed class NonSeekableStream(Stream inner) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        protected override void Dispose(bool disposing) { if (disposing) inner.Dispose(); base.Dispose(disposing); }
     }
 
     [Fact]

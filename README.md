@@ -28,7 +28,7 @@ Webp.Resize(pngBytes);
 | Option | Default | Meaning |
 |---|---|---|
 | `Width`, `Height` | none | Target box. Leave one out to constrain only the other; leave both out to convert without resizing. |
-| `Fit` | `Inside` | `Inside` keeps the whole image inside the box. `Cover` fills the box and crops around the centre; `CoverSmart` crops around the most interesting region. |
+| `Fit` | `Inside` | `Inside` keeps the whole image inside the box. `Cover` fills the box and crops around the centre; `CoverSmart` crops around the most interesting region. Inputs smaller than the box are not enlarged unless `AllowUpscale` is set. |
 | `AllowUpscale` | `false` | Allow output larger than the input. |
 | `Quality` | `80` | Lossy quality, 1–100. |
 | `Effort` | `4` | Encoder effort, 0 (fastest) to 6 (smallest). See below. |
@@ -36,7 +36,7 @@ Webp.Resize(pngBytes);
 | `AlphaQuality` | `100` | Quality of the transparency channel, 0–100. |
 | `SmartSubsample` | `false` | Sharper colour edges, slower encode. |
 | `KeepMetadata` | `false` | Keep EXIF/XMP/ICC. Stripped by default, which makes files smaller. |
-| `MaxInputPixels` | 16383² | Reject larger inputs (decompression bomb guard). `null` turns it off. |
+| `MaxInputPixels` | 16383² | Reject larger inputs (decompression bomb guard). `null` turns it off. Output sides are also limited to 16383 px by the WebP format. |
 
 EXIF orientation is always applied. Inputs can be JPEG, PNG, WebP, GIF, TIFF, HEIF/AVIF and the other formats libvips reads.
 Failures to decode or encode throw `ImageProcessingException`; bad options throw `ArgumentException`.

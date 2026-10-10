@@ -13,19 +13,13 @@ public static class Webp
     public static WebpResult Resize(byte[] input, WebpOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(input);
-        options ??= WebpOptions.Default;
-        options.Validate();
-        WebpRuntime.EnsureConfigured();
+        options = Prepare(options);
 
         return Run(() =>
         {
-            if (options.MaxInputPixels is { } max)
-            {
-                using var header = Image.NewFromBuffer(input, access: Enums.Access.Sequential);
-                CheckPixels(header, max);
-            }
-            using var image = Load(input, options);
-            return Encode(image, options);
+            // A memory source pins the array and lets libvips read it in place, so the input is never copied to native memory.
+            using var source = Source.NewFromMemory(input);
+            return Process(source, options);
         });
     }
 
@@ -34,20 +28,16 @@ public static class Webp
     {
         ArgumentException.ThrowIfNullOrEmpty(inputPath);
         ArgumentException.ThrowIfNullOrEmpty(outputPath);
-        options ??= WebpOptions.Default;
-        options.Validate();
-        WebpRuntime.EnsureConfigured();
+        options = Prepare(options);
         if (!File.Exists(inputPath)) throw new FileNotFoundException("Input image not found.", inputPath);
+        var outputDir = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+        if (outputDir is not null && !Directory.Exists(outputDir)) throw new DirectoryNotFoundException($"Output directory not found: {outputDir}");
 
         var result = Run(() =>
         {
-            if (options.MaxInputPixels is { } max)
-            {
-                using var header = Image.NewFromFile(inputPath, access: Enums.Access.Sequential);
-                CheckPixels(header, max);
-            }
-            using var image = LoadFile(inputPath, options);
-            return Encode(image, options);
+            // A file source takes the path literally; libvips' file loaders would parse a trailing "[...]" as loader options.
+            using var source = Source.NewFromFile(inputPath);
+            return Process(source, options);
         });
         File.WriteAllBytes(outputPath, result.Data);
         return result;
@@ -61,11 +51,13 @@ public static class Webp
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
+        options = Prepare(options);
         byte[] bytes;
-        using (var buffer = new MemoryStream())
+        using (var buffer = NewBuffer(input))
         {
             await input.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-            bytes = buffer.ToArray();
+            // When the length was known up front the buffer is exactly full, so hand it over instead of copying it again.
+            bytes = buffer.TryGetBuffer(out var segment) && segment.Count == segment.Array!.Length ? segment.Array : buffer.ToArray();
         }
         cancellationToken.ThrowIfCancellationRequested();
         var result = Resize(bytes, options);
@@ -73,15 +65,35 @@ public static class Webp
         return result;
     }
 
-    static Image Load(byte[] input, WebpOptions o) =>
-        IsResize(o)
-            ? Image.ThumbnailBuffer(input, TargetWidth(o), height: TargetHeight(o), size: Size(o), crop: Crop(o))
-            : LoadUpright(access => Image.NewFromBuffer(input, access: access));
+    // Size the buffer from the stream length when it is known, so a large upload is not grown by doubling.
+    static MemoryStream NewBuffer(Stream input)
+    {
+        if (!input.CanSeek) return new MemoryStream();
+        long remaining = input.Length - input.Position;
+        return remaining is > 0 and <= int.MaxValue ? new MemoryStream((int)remaining) : new MemoryStream();
+    }
 
-    static Image LoadFile(string path, WebpOptions o) =>
-        IsResize(o)
-            ? Image.Thumbnail(path, TargetWidth(o), height: TargetHeight(o), size: Size(o), crop: Crop(o))
-            : LoadUpright(access => Image.NewFromFile(path, access: access));
+    static WebpOptions Prepare(WebpOptions? options)
+    {
+        options ??= WebpOptions.Default;
+        options.Validate();
+        WebpRuntime.EnsureConfigured();
+        return options;
+    }
+
+    // The whole pipeline over one libvips source: the pixel check reads only the header, then the source is rewound for the load.
+    static WebpResult Process(Source source, WebpOptions o)
+    {
+        if (o.MaxInputPixels is { } max)
+        {
+            using var header = Image.NewFromSource(source, access: Enums.Access.Sequential);
+            CheckPixels(header, max);
+        }
+        using var image = IsResize(o)
+            ? Image.ThumbnailSource(source, TargetWidth(o), height: TargetHeight(o), size: Size(o), crop: Crop(o))
+            : LoadUpright(access => Image.NewFromSource(source, access: access));
+        return Encode(image, o);
+    }
 
     // Sequential access streams the decode, but rotating needs random access, so only pay for it when the EXIF orientation asks.
     static Image LoadUpright(Func<Enums.Access, Image> open)
@@ -95,6 +107,10 @@ public static class Webp
 
     static WebpResult Encode(Image image, WebpOptions o)
     {
+        if (image.Width > WebpMaxSide || image.Height > WebpMaxSide)
+            throw new ImageProcessingException(
+                $"Output would be {image.Width}×{image.Height}, but WebP allows at most {WebpMaxSide} pixels per side. Set Width or Height to resize it.");
+
         var data = image.WebpsaveBuffer(
             q: o.Quality,
             lossless: o.Lossless,
@@ -107,6 +123,9 @@ public static class Webp
 
     // libvips' largest coordinate: an unbounded side for thumbnail.
     const int Unbounded = 10_000_000;
+
+    // The WebP format's limit per side (14 bits).
+    const int WebpMaxSide = 16383;
 
     static bool IsResize(WebpOptions o) => o.Width is not null || o.Height is not null;
     static int TargetWidth(WebpOptions o) => o.Width ?? Unbounded;
