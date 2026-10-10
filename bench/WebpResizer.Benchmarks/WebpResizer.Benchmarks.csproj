@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <!-- BenchmarkDotNet generates code that trips some analyzers. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- ImageSharp 3.1.12 has known advisories. It only decodes our own benchmark images here and never ships. -->
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <!-- Comparison only. ImageSharp 3.2+ needs a licence key to build, so it is pinned to 3.1.12. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/WebpResizer/WebpResizer.csproj" />
+  </ItemGroup>
+
+</Project>

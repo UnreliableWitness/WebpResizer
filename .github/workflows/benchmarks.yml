@@ -1,0 +1,43 @@
+name: Benchmarks
+
+# Manual only: shared CI runners are noisy, so treat the numbers as ratios, not capacity figures.
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: BenchmarkDotNet filter
+        default: "*"
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      IMG_DIR: ${{ github.workspace }}/images
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet build -c Release
+      - shell: bash
+        run: ./scripts/get-images.sh "$IMG_DIR"
+      - name: Latency (BenchmarkDotNet)
+        working-directory: bench/WebpResizer.Benchmarks
+        run: dotnet bin/Release/net10.0/WebpResizer.Benchmarks.dll bench --filter "${{ inputs.filter }}" --exporters github
+      - name: Throughput
+        shell: bash
+        working-directory: bench/WebpResizer.Benchmarks
+        run: |
+          for lib in "WebpResizer" "WebpResizer (effort 2)" "NetVips (raw)" "SkiaSharp (tuned)" "ImageSharp (paid ref)"; do
+            dotnet bin/Release/net10.0/WebpResizer.Benchmarks.dll throughput "$lib" 30 | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-${{ matrix.os }}
+          path: bench/WebpResizer.Benchmarks/BenchmarkDotNet.Artifacts/results
