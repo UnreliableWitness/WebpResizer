@@ -38,7 +38,7 @@ Webp.Resize(pngBytes);
 | `KeepMetadata` | `false` | Keep EXIF/XMP/ICC. Stripped by default, which makes files smaller. |
 | `MaxInputPixels` | 16383² | Reject larger inputs (decompression bomb guard). `null` turns it off. Output sides are also limited to 16383 px by the WebP format. |
 
-EXIF orientation is always applied. Inputs can be JPEG, PNG, WebP, GIF, TIFF, HEIF/AVIF and the other formats libvips reads.
+EXIF orientation is always applied. See [Input formats](#input-formats) for what can be fed in.
 Failures to decode or encode throw `ImageProcessingException`; bad options throw `ArgumentException`.
 
 ### Choosing the encoder effort
@@ -54,6 +54,25 @@ whole pipeline (decode, resize and encode) on a 4 vCPU GitHub runner:
 | 6 | 404 ms | 148,954 B | 0.958 |
 
 Effort 2 is a good choice when throughput matters more than the last 5% of file size: about 1.7× faster end to end.
+
+## Input formats
+
+The format is detected from the bytes, not the file extension. The bundled libvips build reads:
+
+| Format | Notes |
+|---|---|
+| JPEG | Shrinks during decode when resizing, so the cheapest large input. CMYK JPEGs are converted to sRGB. Ultra HDR JPEG is supported. |
+| PNG | Streams through a small window when resizing. 16-bit PNG is reduced to 8-bit for WebP. Alpha is kept. |
+| WebP | Also shrinks during decode. Animated WebP gives the first frame. |
+| GIF | First frame only for animations. |
+| TIFF | First page of multi-page files. Compressed and tiled variants are fine. |
+| HEIC, AVIF | Decoded through libheif. |
+| SVG | Rendered at the requested size when `Width` or `Height` is set, so the output is sharp. `MaxInputPixels` checks the intrinsic size, not the render size. |
+
+EXIF orientation is applied for JPEG, TIFF and HEIF, the formats that carry it.
+
+Not supported, and rejected with `ImageProcessingException`: BMP, ICO, PSD, JPEG 2000, JPEG XL, PDF, OpenEXR, FITS and
+camera RAW files. libvips can read these through ImageMagick, but the NetVips.Native package leaves that dependency out.
 
 ## Threading
 
