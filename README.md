@@ -28,7 +28,7 @@ Webp.Resize(pngBytes);
 | Option | Default | Meaning |
 |---|---|---|
 | `Width`, `Height` | none | Target box. Leave one out to constrain only the other; leave both out to convert without resizing. |
-| `Fit` | `Inside` | `Inside` keeps the whole image inside the box. `Cover` fills the box and crops around the centre; `CoverSmart` crops around the most interesting region. |
+| `Fit` | `Inside` | `Inside` keeps the whole image inside the box. `Cover` fills the box and crops around the centre; `CoverSmart` crops around the most interesting region. Inputs smaller than the box are not enlarged unless `AllowUpscale` is set. |
 | `AllowUpscale` | `false` | Allow output larger than the input. |
 | `Quality` | `80` | Lossy quality, 1–100. |
 | `Effort` | `4` | Encoder effort, 0 (fastest) to 6 (smallest). See below. |
@@ -36,23 +36,24 @@ Webp.Resize(pngBytes);
 | `AlphaQuality` | `100` | Quality of the transparency channel, 0–100. |
 | `SmartSubsample` | `false` | Sharper colour edges, slower encode. |
 | `KeepMetadata` | `false` | Keep EXIF/XMP/ICC. Stripped by default, which makes files smaller. |
-| `MaxInputPixels` | 16383² | Reject larger inputs (decompression bomb guard). `null` turns it off. |
+| `MaxInputPixels` | 16383² | Reject larger inputs (decompression bomb guard). `null` turns it off. Output sides are also limited to 16383 px by the WebP format. |
 
 EXIF orientation is always applied. Inputs can be JPEG, PNG, WebP, GIF, TIFF, HEIF/AVIF and the other formats libvips reads.
 Failures to decode or encode throw `ImageProcessingException`; bad options throw `ArgumentException`.
 
 ### Choosing the encoder effort
 
-WebP encoding is most of the work, so `Effort` is the main speed knob. Measured on a 24 MP photo resized to 1600 px:
+WebP encoding is most of the work, so `Effort` is the main speed knob. Measured on a 24 MP photo resized to 1600 px,
+whole pipeline (decode, resize and encode) on a 4 vCPU GitHub runner:
 
-| Effort | Encode time | Output size | SSIM |
+| Effort | Time | Output size | SSIM |
 |---:|---:|---:|---:|
-| 0 | 60 ms | 212,544 B | 0.957 |
-| 2 | 102 ms | 166,410 B | 0.958 |
+| 0 | 119 ms | 212,544 B | 0.957 |
+| 2 | 142 ms | 166,410 B | 0.958 |
 | **4** (default) | 246 ms | 158,226 B | 0.960 |
-| 6 | 550 ms | 148,954 B | 0.958 |
+| 6 | 404 ms | 148,954 B | 0.958 |
 
-Effort 2 is a good choice when throughput matters more than the last 5% of file size.
+Effort 2 is a good choice when throughput matters more than the last 5% of file size: about 1.7× faster end to end.
 
 ## Threading
 
@@ -83,15 +84,18 @@ To benchmark your own photos, put them in a folder named like the defaults (`pho
 `alpha-3mp.png`) and point `IMG_DIR` at it. The **Benchmarks** workflow in GitHub Actions runs the suite on Linux and
 Windows on demand; shared runners are noisy, so compare ratios rather than absolute times.
 
-Results from the original study (4 vCPU Xeon @ 2.1 GHz, Ubuntu 24.04, one thread per image):
+Results from the Benchmarks workflow on `ubuntu-latest` (AMD EPYC 9V45, 4 vCPU, Ubuntu 24.04, one thread per image):
 
 | Library | Images/s (4 cores, mixed workload) | vs ImageSharp | Peak memory |
 |---|---:|---:|---:|
-| **libvips (WebpResizer)** | **18.2** | **2.4×** | 493 MB |
-| SkiaSharp + libwebp | 16.7 | 2.2× | 331 MB |
-| SkiaSharp | 12.2 | 1.6× | 352 MB |
-| Magick.NET Q8 | 9.5 | 1.2× | 356 MB |
-| ImageSharp 3.1 | 7.7 | 1.0× | 716 MB |
+| **libvips (WebpResizer)** | **19.3** | **2.4×** | 572 MB |
+| libvips (WebpResizer, effort 2) | 30.6 | 3.7× | 498 MB |
+| NetVips (raw) | 19.1 | 2.3× | 581 MB |
+| SkiaSharp (tuned) | 17.6 | 2.1× | 393 MB |
+| ImageSharp 3.1 | 8.2 | 1.0× | 698 MB |
+
+The same run on `windows-latest` gave 12.0 images/s for WebpResizer against 3.3 for ImageSharp (3.7×). An earlier, broader
+study on a 4 vCPU Xeon also measured Magick.NET Q8 at 1.2× ImageSharp and SkiaSharp without codec tuning at 1.6×.
 
 WebpResizer's own overhead over calling NetVips directly is within measurement noise.
 

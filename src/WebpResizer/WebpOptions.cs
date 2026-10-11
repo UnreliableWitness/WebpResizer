@@ -5,7 +5,10 @@ public enum Fit
 {
     /// <summary>Keep the aspect ratio and fit inside the box. A missing dimension is unbounded.</summary>
     Inside,
-    /// <summary>Fill the box exactly, cropping the overflow around the centre. Needs both dimensions.</summary>
+    /// <summary>
+    /// Fill the box, cropping the overflow around the centre. Needs both dimensions. An input smaller than the box is
+    /// cropped to the box but not enlarged unless <see cref="WebpOptions.AllowUpscale"/> is set, so the output can be smaller than the box.
+    /// </summary>
     Cover,
     /// <summary>Like <see cref="Cover"/>, but crops around the most interesting region (libvips "attention").</summary>
     CoverSmart,
@@ -31,7 +34,7 @@ public sealed record WebpOptions
 
     /// <summary>
     /// Encoder effort, 0 (fastest) to 6 (smallest files). Default 4, the libwebp default.
-    /// Effort 2 encodes about 2.4× faster for files about 5% larger.
+    /// Effort 2 is about 1.7× faster end to end (decode, resize and encode) for files about 5% larger.
     /// </summary>
     public int Effort { get; init; } = 4;
 
